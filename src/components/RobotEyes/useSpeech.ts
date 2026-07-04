@@ -1,6 +1,6 @@
 /**
- * useSpeech — TTS using Web Speech API with mbrola voice (human-sounding).
- * Falls back to espeak-ng if mbrola isn't available.
+ * useSpeech — TTS using backend espeak-ng mbrola endpoint.
+ * Sounds human, works reliably.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,44 +16,25 @@ export interface UseSpeechState {
   speaking: boolean;
   speak: (text: string, options?: SpeechOptions) => void;
   stop: () => void;
-  voices: SpeechSynthesisVoice[];
 }
 
 export function useSpeech(): UseSpeechState {
   const [speaking, setSpeaking] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [supported, setSupported] = useState(false);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const speakingRef = useRef(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    synthRef.current = synth;
-    setSupported(true);
-    const loadVoices = () => {
-      const v = synth.getVoices();
-      setVoices(v);
-      // Log available voices
-      console.log('Voices:', v.map(x => `${x.name} [${x.lang}]`).join(', '));
-    };
-    loadVoices();
-    synth.addEventListener('voiceschanged', loadVoices);
-    return () => synth.removeEventListener('voiceschanged', loadVoices);
-  }, []);
+  const [supported] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const stop = useCallback(() => {
-    synthRef.current?.cancel();
-    speakingRef.current = false;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
     setSpeaking(false);
   }, []);
 
   const speak = useCallback((text: string, options: SpeechOptions = {}) => {
-    const synth = synthRef.current;
-    if (!synth || !text.trim()) return;
-
-    synth.cancel();
+    if (!text.trim()) return;
+    stop();
 
     // Clean text
     const cleanText = text
@@ -64,43 +45,36 @@ export function useSpeech(): UseSpeechState {
 
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = options.rate ?? 0.85;
-    utterance.pitch = options.pitch ?? 1.1;
-    utterance.lang = options.lang ?? 'en-US';
+    // Limit text length
+    const limitedText = cleanText.substring(0, 800);
 
-    // Pick best voice: mbrola > Google > en-US > first
-    if (voices.length > 0) {
-      const mbrola = voices.find(v => v.name.includes('us-mbrola'));
-      const google = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
-      const enUs = voices.find(v => v.lang === 'en-US');
-      const en = voices.find(v => v.lang.startsWith('en'));
-      utterance.voice = mbrola || google || enUs || en || voices[0];
-      console.log('Using voice:', utterance.voice?.name, utterance.voice?.lang);
-    }
+    const host = typeof window !== 'undefined'
+      ? (import.meta.env.PUBLIC_API_URL || 'http://localhost:8000')
+      : 'http://localhost:8000';
 
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
-    utterance.onend = () => { speakingRef.current = false; setSpeaking(false); };
-    utterance.onerror = (e) => {
-      console.warn('TTS error:', e.error);
-      speakingRef.current = false;
+    const url = `${host}/api/v1/tts?text=${encodeURIComponent(limitedText)}&speed=160&pitch=50`;
+
+    const audio = new Audio(url);
+    audioRef.current = audio;
+
+    audio.onplay = () => setSpeaking(true);
+    audio.onended = () => {
       setSpeaking(false);
+      audioRef.current = null;
+    };
+    audio.onerror = (e) => {
+      console.warn('TTS error:', e);
+      setSpeaking(false);
+      audioRef.current = null;
     };
 
-    // Chrome keep-alive workaround
-    const keepAlive = setInterval(() => {
-      if (synth.speaking && !synth.paused) {
-        synth.pause();
-        synth.resume();
-      } else {
-        clearInterval(keepAlive);
-      }
-    }, 8000);
+    audio.play().catch((e) => {
+      console.warn('TTS play failed:', e);
+      setSpeaking(false);
+    });
+  }, [stop]);
 
-    synth.speak(utterance);
-  }, [voices]);
+  useEffect(() => { return () => stop(); }, [stop]);
 
-  useEffect(() => { return () => synthRef.current?.cancel(); }, []);
-
-  return { supported, speaking, speak, stop, voices };
+  return { supported, speaking, speak, stop };
 }
