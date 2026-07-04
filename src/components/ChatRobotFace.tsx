@@ -1,8 +1,8 @@
 /**
- * ChatRobotFace — Robot face with emotion label, TTS, and STT.
+ * ChatRobotFace — Robot face with dynamic emotion label, feature label, TTS.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import RobotFace from './RobotEyes/RobotFace';
 import EmotionLabel from './RobotEyes/EmotionLabel';
 import FeatureLabel from './RobotEyes/FeatureLabel';
@@ -10,6 +10,7 @@ import { useExpressionState } from './RobotEyes/useExpressionState';
 import { useSpeech } from './RobotEyes/useSpeech';
 import { useSpeechRecognition } from './RobotEyes/useSpeechRecognition';
 import { analyzeSentiment } from './sentiment';
+import { detectFeature } from './detectFeature';
 import { playEmotionSound } from './emotionSounds';
 import { Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 import type { Emotion } from './RobotEyes/expressions';
@@ -26,11 +27,7 @@ interface ChatRobotFaceProps {
 }
 
 function cleanForSpeech(text: string): string {
-  return text
-    .replace(/[*_`#\[\](){}|]/g, '')
-    .replace(/\n+/g, '. ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return text.replace(/[*_`#\[\](){}|]/g, '').replace(/\n+/g, '. ').replace(/\s+/g, ' ').trim();
 }
 
 export default function ChatRobotFace({
@@ -48,8 +45,11 @@ export default function ChatRobotFace({
   const { listening, interimTranscript, transcript, start: startSTT, stop: stopSTT, error: sttError } = useSpeechRecognition();
   const [idleTime, setIdleTime] = useState(0);
   const prevEmotionRef = useRef<Emotion | null>(null);
-  const autoSpokenRef = useRef<string>(''); // track what auto-TTS already spoke
+  const autoSpokenRef = useRef<string>('');
   const [mounted, setMounted] = useState(false);
+
+  // Detect feature from last message
+  const detectedFeature = useMemo(() => detectFeature(lastMessage || ''), [lastMessage]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -62,7 +62,6 @@ export default function ChatRobotFace({
     if (isGenerating || !isConnected) setIdleTime(0);
   }, [isGenerating, isConnected]);
 
-  // Send transcript to parent (chat input)
   useEffect(() => {
     if (transcript && onTranscript) onTranscript(transcript);
   }, [transcript, onTranscript]);
@@ -84,27 +83,28 @@ export default function ChatRobotFace({
     prevEmotionRef.current = newEmotion;
   }, [isGenerating, isConnected, lastMessage, lastMessageRole, idleTime, listening, setEmotion]);
 
-  // Auto-speak assistant responses (only NEW ones)
+  // Auto-speak assistant responses
   useEffect(() => {
     if (enableTTS && lastMessage && lastMessageRole === 'assistant' && lastMessage !== autoSpokenRef.current && !speaking) {
       autoSpokenRef.current = lastMessage;
       const plainText = cleanForSpeech(lastMessage);
-      if (plainText) speak(plainText);
+      if (plainText) {
+        console.log('🔊 Auto-speaking response...');
+        speak(plainText);
+      }
     }
   }, [lastMessage, lastMessageRole, enableTTS, speak, speaking]);
 
-  // Voice button: speak last response or stop
   const handleVoice = useCallback(() => {
     if (speaking) { stopTTS(); return; }
-    // Always try to speak the last message
     if (lastMessage && lastMessage.trim()) {
       const plainText = cleanForSpeech(lastMessage);
       if (plainText) {
+        console.log('🔊 Reading last response...');
         speak(plainText);
         return;
       }
     }
-    // Fallback: say hello
     speak('Hello! I am your AI companion. How can I help you today?');
   }, [speaking, stopTTS, lastMessage, speak]);
 
@@ -126,14 +126,12 @@ export default function ChatRobotFace({
       >
         <RobotFace emotion={currentEmotion} size={size} backgroundColor={backgroundColor} />
       </div>
-      <EmotionLabel emotion={currentEmotion} />
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
-        <FeatureLabel feature="chat" />
-        <FeatureLabel feature="gym" />
-        <FeatureLabel feature="health" />
-        <FeatureLabel feature="study" />
-        <FeatureLabel feature="courses" />
-        <FeatureLabel feature="quizzes" />
+
+      {/* Labels row: emotion + detected feature */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <EmotionLabel emotion={currentEmotion} />
+        {detectedFeature && <FeatureLabel feature={detectedFeature} />}
+        {!detectedFeature && <FeatureLabel feature="chat" />}
       </div>
 
       {speaking && (
