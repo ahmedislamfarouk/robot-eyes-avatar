@@ -1,6 +1,6 @@
 /**
- * useSpeech — TTS using free Google Translate TTS endpoint.
- * Sounds human, works everywhere, no API key needed.
+ * useSpeech — TTS using Web Speech API with mbrola voice (human-sounding).
+ * Falls back to espeak-ng if mbrola isn't available.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,74 +16,91 @@ export interface UseSpeechState {
   speaking: boolean;
   speak: (text: string, options?: SpeechOptions) => void;
   stop: () => void;
+  voices: SpeechSynthesisVoice[];
 }
 
 export function useSpeech(): UseSpeechState {
   const [speaking, setSpeaking] = useState(false);
-  const [supported] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [supported, setSupported] = useState(false);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const speakingRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synthRef.current = synth;
+    setSupported(true);
+    const loadVoices = () => {
+      const v = synth.getVoices();
+      setVoices(v);
+      // Log available voices
+      console.log('Voices:', v.map(x => `${x.name} [${x.lang}]`).join(', '));
+    };
+    loadVoices();
+    synth.addEventListener('voiceschanged', loadVoices);
+    return () => synth.removeEventListener('voiceschanged', loadVoices);
+  }, []);
 
   const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    synthRef.current?.cancel();
+    speakingRef.current = false;
     setSpeaking(false);
   }, []);
 
   const speak = useCallback((text: string, options: SpeechOptions = {}) => {
-    if (!text.trim()) return;
-    stop();
+    const synth = synthRef.current;
+    if (!synth || !text.trim()) return;
 
-    // Clean text for TTS
+    synth.cancel();
+
+    // Clean text
     const cleanText = text
-      .replace(/[*_`#\[\](){}]/g, '')
+      .replace(/[*_`#\[\](){}|]/g, '')
       .replace(/\n+/g, '. ')
-      .replace(/[^\w\s.,!?;:'-]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
 
     if (!cleanText) return;
 
-    // Split long text into chunks (Google TTS has a 200 char limit per request)
-    const chunks: string[] = [];
-    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-    let current = '';
-    for (const sentence of sentences) {
-      if (current.length + sentence.length > 180) {
-        if (current) chunks.push(current);
-        current = sentence;
-      } else {
-        current += sentence;
-      }
-    }
-    if (current) chunks.push(current);
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = options.rate ?? 0.85;
+    utterance.pitch = options.pitch ?? 1.1;
+    utterance.lang = options.lang ?? 'en-US';
 
-    // Play chunks sequentially
-    let index = 0;
-    const playNext = () => {
-      if (index >= chunks.length) {
-        setSpeaking(false);
-        return;
-      }
-      const chunk = chunks[index];
-      index++;
-      const lang = options.lang || 'en';
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => playNext();
-      audio.onerror = () => {
-        console.warn('TTS chunk failed, trying next...');
-        playNext();
-      };
-      audio.play().catch(() => playNext());
+    // Pick best voice: mbrola > Google > en-US > first
+    if (voices.length > 0) {
+      const mbrola = voices.find(v => v.name.includes('us-mbrola'));
+      const google = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
+      const enUs = voices.find(v => v.lang === 'en-US');
+      const en = voices.find(v => v.lang.startsWith('en'));
+      utterance.voice = mbrola || google || enUs || en || voices[0];
+      console.log('Using voice:', utterance.voice?.name, utterance.voice?.lang);
+    }
+
+    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
+    utterance.onend = () => { speakingRef.current = false; setSpeaking(false); };
+    utterance.onerror = (e) => {
+      console.warn('TTS error:', e.error);
+      speakingRef.current = false;
+      setSpeaking(false);
     };
 
-    setSpeaking(true);
-    playNext();
-  }, [stop]);
+    // Chrome keep-alive workaround
+    const keepAlive = setInterval(() => {
+      if (synth.speaking && !synth.paused) {
+        synth.pause();
+        synth.resume();
+      } else {
+        clearInterval(keepAlive);
+      }
+    }, 8000);
 
-  useEffect(() => { return () => stop(); }, [stop]);
+    synth.speak(utterance);
+  }, [voices]);
 
-  return { supported, speaking, speak, stop };
+  useEffect(() => { return () => synthRef.current?.cancel(); }, []);
+
+  return { supported, speaking, speak, stop, voices };
 }
