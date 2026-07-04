@@ -119,7 +119,7 @@ export default function ChatRobotFace({
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
       <div
         onClick={() => speaking ? stopTTS() : playEmotionSound(currentEmotion)}
         style={{ cursor: 'pointer' }}
@@ -128,8 +128,8 @@ export default function ChatRobotFace({
         <RobotFace emotion={currentEmotion} size={size} backgroundColor={backgroundColor} />
       </div>
 
-      {/* Labels row: emotion + detected feature */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+      {/* Labels row: emotion + detected feature — tight to face */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: -4 }}>
         <EmotionLabel emotion={currentEmotion} />
         {detectedFeature && <FeatureLabel feature={detectedFeature} />}
         {!detectedFeature && <FeatureLabel feature="chat" />}
