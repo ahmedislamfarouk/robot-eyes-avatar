@@ -1,0 +1,288 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   ROBO-RAVE — Global Styles
+   ========================================================================== */
+
+/* ---------- Design Tokens ---------- */
+:root {
+  /* Background & Surface */
+  --bg-void: #050508;
+  --bg-base: #0a0a0f;
+  --bg-elevated: #0f0f18;
+  --bg-surface: #1a1a2e;
+  --bg-card: rgba(26, 26, 46, 0.65);
+
+  /* Accent Palette */
+  --cyan: #00d4ff;
+  --cyan-dim: #0099cc;
+  --cyan-glow: rgba(0, 212, 255, 0.15);
+  --cyan-glow-strong: rgba(0, 212, 255, 0.35);
+  --cyan-subtle: rgba(0, 212, 255, 0.06);
+  --magenta: #ff00aa;
+  --magenta-dim: #cc0088;
+
+  /* Text */
+  --text-primary: #f0f0f5;
+  --text-secondary: #a0a0b8;
+  --text-muted: #5a5a72;
+  --text-accent: var(--cyan);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-glow: rgba(0, 212, 255, 0.2);
+
+  /* Typography */
+  --font-display: "Orbitron", sans-serif;
+  --font-body: "Rajdhani", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Transitions */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+}
+
+/* ---------- Reset & Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--text-primary);
+  background: var(--bg-void);
+  line-height: 1.6;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ---------- Custom Scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-surface);
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cyan-dim);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-surface) var(--bg-base);
+}
+
+/* ---------- Selection ---------- */
+::selection {
+  background: var(--cyan-glow-strong);
+  color: var(--text-primary);
+}
+
+/* ---------- Focus Visible ---------- */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Typography Utilities ---------- */
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* ---------- Glass Morphism ---------- */
+.glass {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid var(--border-subtle);
+}
+
+.glass-strong {
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(30px) saturate(1.4);
+  -webkit-backdrop-filter: blur(30px) saturate(1.4);
+  border: 1px solid var(--border-glow);
+}
+
+/* ---------- Glow Effects ---------- */
+.glow-cyan {
+  box-shadow:
+    0 0 20px var(--cyan-glow),
+    0 0 60px rgba(0, 212, 255, 0.08);
+}
+
+.glow-cyan-strong {
+  box-shadow:
+    0 0 20px var(--cyan-glow-strong),
+    0 0 80px rgba(0, 212, 255, 0.12),
+    inset 0 0 20px rgba(0, 212, 255, 0.05);
+}
+
+/* ---------- Animated Background Grid ---------- */
+@keyframes grid-scroll {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(40px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+/* ---------- Noise Overlay ---------- */
+.noise-overlay::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ---------- Button Base ---------- */
+.btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.25s var(--ease-smooth);
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: var(--cyan-dim);
+  color: var(--text-primary);
+  background: rgba(0, 212, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: var(--cyan-glow);
+  box-shadow:
+    0 0 16px var(--cyan-glow),
+    inset 0 0 12px rgba(0, 212, 255, 0.06);
+}
+
+.btn-active:hover {
+  background: var(--cyan-glow-strong);
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+/* ---------- Section Divider ---------- */
+.divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-glow) 20%,
+    var(--cyan-dim) 50%,
+    var(--border-glow) 80%,
+    transparent
+  );
+  opacity: 0.5;
+}
