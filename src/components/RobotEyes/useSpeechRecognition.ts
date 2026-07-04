@@ -1,6 +1,6 @@
 /**
- * useSpeechRecognition — Speech-to-Text hook using the Web Speech API.
- * Defers browser checks to client side only to avoid hydration mismatches.
+ * useSpeechRecognition — Speech-to-Text using Web Speech API.
+ * Client-side only to avoid hydration mismatches.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,7 +32,6 @@ export function useSpeechRecognition(
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
-
   const recognitionRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
@@ -41,16 +40,13 @@ export function useSpeechRecognition(
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Client-side only init
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setSupported(false); return; }
     setSupported(true);
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SR();
     recognition.lang = lang;
     recognition.interimResults = interimResults;
     recognition.continuous = continuous;
@@ -58,87 +54,44 @@ export function useSpeechRecognition(
 
     recognition.onresult = (event: any) => {
       if (!mountedRef.current) return;
-
       let interim = '';
       let final = '';
-
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
+        if (event.results[i].isFinal) final += event.results[i][0].transcript;
+        else interim += event.results[i][0].transcript;
       }
-
-      if (final) {
-        setTranscript(prev => prev ? prev + ' ' + final.trim() : final.trim());
-        setInterimTranscript('');
-      } else {
-        setInterimTranscript(interim);
-      }
+      if (final) { setTranscript(p => p ? p + ' ' + final.trim() : final.trim()); setInterimTranscript(''); }
+      else setInterimTranscript(interim);
     };
 
-    recognition.onend = () => {
+    recognition.onend = () => { if (mountedRef.current) { setListening(false); setInterimTranscript(''); } };
+    recognition.onerror = (e: any) => {
+      console.warn('STT error:', e.error);
       if (mountedRef.current) {
-        setListening(false);
-        setInterimTranscript('');
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.warn('STT error:', event.error);
-      if (mountedRef.current) {
-        setListening(false);
-        setInterimTranscript('');
-        if (event.error === 'not-allowed') {
-          setError('Microphone access denied. Please allow mic in browser settings.');
-        } else if (event.error === 'no-speech') {
-          setError('No speech detected. Try speaking again.');
-        } else if (event.error === 'network') {
-          setError('Network error. Speech recognition requires internet connection.');
-        } else {
-          setError(`Speech error: ${event.error}`);
-        }
+        setListening(false); setInterimTranscript('');
+        if (e.error === 'not-allowed') setError('Microphone access denied.');
+        else if (e.error === 'no-speech') setError('No speech detected.');
+        else if (e.error === 'network') setError('Network error.');
+        else setError(`Error: ${e.error}`);
       }
     };
 
     recognitionRef.current = recognition;
-
-    return () => {
-      try { recognition.abort(); } catch {}
-    };
+    return () => { try { recognition.abort(); } catch {} };
   }, [lang, interimResults, continuous]);
 
   const start = useCallback(() => {
-    if (!recognitionRef.current) {
-      setError('Speech recognition not supported in this browser.');
-      return;
-    }
-    setError(null);
-    setTranscript('');
-    setInterimTranscript('');
-    setListening(true);
-    try {
-      recognitionRef.current.start();
-    } catch (e) {
-      console.warn('STT start error:', e);
-      setListening(false);
-      setError('Failed to start speech recognition.');
-    }
+    if (!recognitionRef.current) { setError('STT not supported.'); return; }
+    setError(null); setTranscript(''); setInterimTranscript(''); setListening(true);
+    try { recognitionRef.current.start(); } catch { setListening(false); }
   }, []);
 
   const stop = useCallback(() => {
     try { recognitionRef.current?.stop(); } catch {}
-    setListening(false);
-    setInterimTranscript('');
+    setListening(false); setInterimTranscript('');
   }, []);
 
-  const reset = useCallback(() => {
-    setTranscript('');
-    setInterimTranscript('');
-    setError(null);
-  }, []);
+  const reset = useCallback(() => { setTranscript(''); setInterimTranscript(''); setError(null); }, []);
 
   return { supported, listening, transcript, interimTranscript, error, start, stop, reset };
 }
