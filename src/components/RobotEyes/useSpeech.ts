@@ -1,6 +1,6 @@
 /**
  * useSpeech — Text-to-Speech hook using the Web Speech API.
- * No API keys needed. Works in Chrome, Edge, Safari.
+ * Defers browser checks to client side only to avoid hydration mismatches.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,72 +23,47 @@ export interface UseSpeechState {
 export function useSpeech(): UseSpeechState {
   const [speaking, setSpeaking] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const unlockedRef = useRef(false);
+  const [supported, setSupported] = useState(false);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
 
-  // Load voices
+  // Client-side only init
   useEffect(() => {
-    if (!supported) return;
-    const loadVoices = () => {
-      const v = window.speechSynthesis.getVoices();
-      setVoices(v);
-    };
+    if (typeof window === 'undefined') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    synthRef.current = synth;
+    setSupported(true);
+
+    const loadVoices = () => setVoices(synth.getVoices());
     loadVoices();
-    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
-    return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
-  }, [supported]);
-
-  // Unlock speech on first user interaction
-  const unlock = useCallback(() => {
-    if (!supported || unlockedRef.current) return;
-    unlockedRef.current = true;
-    // Chrome needs a silent utterance to unlock
-    try {
-      const u = new SpeechSynthesisUtterance('');
-      u.volume = 0;
-      window.speechSynthesis.speak(u);
-    } catch {}
-  }, [supported]);
-
-  useEffect(() => {
-    if (!supported) return;
-    const handler = () => unlock();
-    window.addEventListener('click', handler, { once: true });
-    window.addEventListener('keydown', handler, { once: true });
-    return () => {
-      window.removeEventListener('click', handler);
-      window.removeEventListener('keydown', handler);
-    };
-  }, [supported, unlock]);
+    synth.addEventListener('voiceschanged', loadVoices);
+    return () => synth.removeEventListener('voiceschanged', loadVoices);
+  }, []);
 
   const stop = useCallback(() => {
-    if (!supported) return;
-    window.speechSynthesis.cancel();
+    synthRef.current?.cancel();
     setSpeaking(false);
-  }, [supported]);
+  }, []);
 
   const speak = useCallback((text: string, options: SpeechOptions = {}) => {
-    if (!supported || !text.trim()) return;
+    const synth = synthRef.current;
+    if (!synth || !text.trim()) return;
 
-    unlock();
-
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
+    synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = options.rate ?? 1;
     utterance.pitch = options.pitch ?? 1;
     utterance.lang = options.lang ?? 'en-US';
 
-    // Pick a good voice
-    if (options.voiceName) {
+    // Pick voice
+    if (options.voiceName && voices.length > 0) {
       const v = voices.find(v => v.name === options.voiceName);
       if (v) utterance.voice = v;
     } else if (voices.length > 0) {
-      // Prefer a natural-sounding English voice
-      const preferred = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google'));
-      const english = voices.find(v => v.lang.startsWith('en'));
-      utterance.voice = preferred || english || voices[0];
+      const en = voices.find(v => v.lang.startsWith('en'));
+      if (en) utterance.voice = en;
     }
 
     utterance.onstart = () => setSpeaking(true);
@@ -96,14 +71,40 @@ export function useSpeech(): UseSpeechState {
     utterance.onerror = (e) => {
       console.warn('TTS error:', e.error);
       setSpeaking(false);
+      // Retry once with a different approach
+      if (e.error === 'synthesis-failed' || e.error === 'canceled') {
+        setTimeout(() => {
+          try {
+            const u2 = new SpeechSynthesisUtterance(text);
+            u2.rate = utterance.rate;
+            u2.pitch = utterance.pitch;
+            u2.lang = utterance.lang;
+            if (utterance.voice) u2.voice = utterance.voice;
+            u2.onstart = () => setSpeaking(true);
+            u2.onend = () => setSpeaking(false);
+            u2.onerror = () => setSpeaking(false);
+            synth.speak(u2);
+          } catch {}
+        }, 200);
+      }
     };
 
-    window.speechSynthesis.speak(utterance);
-  }, [supported, voices, unlock]);
+    // Chrome bug workaround: speak in a loop to prevent stopping
+    const keepAlive = setInterval(() => {
+      if (synth.speaking && !synth.paused) {
+        synth.pause();
+        synth.resume();
+      } else {
+        clearInterval(keepAlive);
+      }
+    }, 10000);
+
+    synth.speak(utterance);
+  }, [voices]);
 
   useEffect(() => {
-    return () => { if (supported) window.speechSynthesis.cancel(); };
-  }, [supported]);
+    return () => synthRef.current?.cancel();
+  }, []);
 
   return { supported, speaking, speak, stop, voices };
 }

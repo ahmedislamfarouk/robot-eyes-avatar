@@ -1,6 +1,6 @@
 /**
  * useSpeechRecognition — Speech-to-Text hook using the Web Speech API.
- * No API keys needed. Works in Chrome, Edge.
+ * Defers browser checks to client side only to avoid hydration mismatches.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -31,25 +31,24 @@ export function useSpeechRecognition(
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [supported, setSupported] = useState(false);
 
   const recognitionRef = useRef<any>(null);
   const mountedRef = useRef(true);
-
-  const supported = typeof window !== 'undefined' && (
-    'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
-  );
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Create recognition instance
+  // Client-side only init
   useEffect(() => {
-    if (!supported) return;
+    if (typeof window === 'undefined') return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
+
+    setSupported(true);
 
     const recognition = new SpeechRecognition();
     recognition.lang = lang;
@@ -88,16 +87,18 @@ export function useSpeechRecognition(
     };
 
     recognition.onerror = (event: any) => {
-      console.warn('Speech recognition error:', event.error);
+      console.warn('STT error:', event.error);
       if (mountedRef.current) {
         setListening(false);
         setInterimTranscript('');
         if (event.error === 'not-allowed') {
-          setError('Microphone access denied. Please allow microphone in your browser settings.');
+          setError('Microphone access denied. Please allow mic in browser settings.');
         } else if (event.error === 'no-speech') {
           setError('No speech detected. Try speaking again.');
+        } else if (event.error === 'network') {
+          setError('Network error. Speech recognition requires internet connection.');
         } else {
-          setError(`Speech recognition error: ${event.error}`);
+          setError(`Speech error: ${event.error}`);
         }
       }
     };
@@ -107,10 +108,10 @@ export function useSpeechRecognition(
     return () => {
       try { recognition.abort(); } catch {}
     };
-  }, [supported, lang, interimResults, continuous]);
+  }, [lang, interimResults, continuous]);
 
   const start = useCallback(() => {
-    if (!supported || !recognitionRef.current) {
+    if (!recognitionRef.current) {
       setError('Speech recognition not supported in this browser.');
       return;
     }
@@ -123,17 +124,15 @@ export function useSpeechRecognition(
     } catch (e) {
       console.warn('STT start error:', e);
       setListening(false);
+      setError('Failed to start speech recognition.');
     }
-  }, [supported]);
+  }, []);
 
   const stop = useCallback(() => {
-    if (!supported || !recognitionRef.current) return;
-    try {
-      recognitionRef.current.stop();
-    } catch {}
+    try { recognitionRef.current?.stop(); } catch {}
     setListening(false);
     setInterimTranscript('');
-  }, [supported]);
+  }, []);
 
   const reset = useCallback(() => {
     setTranscript('');
