@@ -1,6 +1,6 @@
 /**
- * useSpeech — Text-to-Speech hook using the Web Speech API.
- * Client-side only to avoid hydration mismatches.
+ * useSpeech — TTS using free Google Translate TTS endpoint.
+ * Sounds human, works everywhere, no API key needed.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -9,7 +9,6 @@ export interface SpeechOptions {
   rate?: number;
   pitch?: number;
   lang?: string;
-  voiceName?: string;
 }
 
 export interface UseSpeechState {
@@ -17,54 +16,74 @@ export interface UseSpeechState {
   speaking: boolean;
   speak: (text: string, options?: SpeechOptions) => void;
   stop: () => void;
-  voices: SpeechSynthesisVoice[];
 }
 
 export function useSpeech(): UseSpeechState {
   const [speaking, setSpeaking] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [supported, setSupported] = useState(false);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    synthRef.current = synth;
-    setSupported(true);
-    const loadVoices = () => setVoices(synth.getVoices());
-    loadVoices();
-    synth.addEventListener('voiceschanged', loadVoices);
-    return () => synth.removeEventListener('voiceschanged', loadVoices);
-  }, []);
+  const [supported] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const stop = useCallback(() => {
-    synthRef.current?.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     setSpeaking(false);
   }, []);
 
   const speak = useCallback((text: string, options: SpeechOptions = {}) => {
-    const synth = synthRef.current;
-    if (!synth || !text.trim()) return;
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = options.rate ?? 1;
-    utterance.pitch = options.pitch ?? 1;
-    utterance.lang = options.lang ?? 'en-US';
-    if (options.voiceName && voices.length > 0) {
-      const v = voices.find(v => v.name === options.voiceName);
-      if (v) utterance.voice = v;
-    } else if (voices.length > 0) {
-      const en = voices.find(v => v.lang.startsWith('en'));
-      if (en) utterance.voice = en;
+    if (!text.trim()) return;
+    stop();
+
+    // Clean text for TTS
+    const cleanText = text
+      .replace(/[*_`#\[\](){}]/g, '')
+      .replace(/\n+/g, '. ')
+      .replace(/[^\w\s.,!?;:'-]/g, '')
+      .trim();
+
+    if (!cleanText) return;
+
+    // Split long text into chunks (Google TTS has a 200 char limit per request)
+    const chunks: string[] = [];
+    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
+    let current = '';
+    for (const sentence of sentences) {
+      if (current.length + sentence.length > 180) {
+        if (current) chunks.push(current);
+        current = sentence;
+      } else {
+        current += sentence;
+      }
     }
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    synth.speak(utterance);
-  }, [voices]);
+    if (current) chunks.push(current);
 
-  useEffect(() => { return () => synthRef.current?.cancel(); }, []);
+    // Play chunks sequentially
+    let index = 0;
+    const playNext = () => {
+      if (index >= chunks.length) {
+        setSpeaking(false);
+        return;
+      }
+      const chunk = chunks[index];
+      index++;
+      const lang = options.lang || 'en';
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => playNext();
+      audio.onerror = () => {
+        console.warn('TTS chunk failed, trying next...');
+        playNext();
+      };
+      audio.play().catch(() => playNext());
+    };
 
-  return { supported, speaking, speak, stop, voices };
+    setSpeaking(true);
+    playNext();
+  }, [stop]);
+
+  useEffect(() => { return () => stop(); }, [stop]);
+
+  return { supported, speaking, speak, stop };
 }
