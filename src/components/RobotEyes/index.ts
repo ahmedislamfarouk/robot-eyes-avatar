@@ -4,6 +4,8 @@ export type { RobotFaceProps } from './RobotFace';
 export { default as Eye } from './Eye';
 export type { EyeProps } from './Eye';
 
+export { default as EmotionLabel } from './EmotionLabel';
+
 export { expressions, lerpEyeState, lerp, clamp } from './expressions';
 export type { Emotion, EyeState, Expression } from './expressions';
 
@@ -18,6 +20,12 @@ export type { UseMouseTrackingOptions, MouseTrackingState } from './useMouseTrac
 
 export { useAutoExpressions } from './useAutoExpressions';
 export type { UseAutoExpressionsOptions, AutoExpressionsState } from './useAutoExpressions';
+
+export { useSpeech } from './useSpeech';
+export type { SpeechOptions, UseSpeechState } from './useSpeech';
+
+export { useSpeechRecognition } from './useSpeechRecognition';
+export type { UseSpeechRecognitionOptions, UseSpeechRecognitionState } from './useSpeechRecognition';
 
 export {
   playSequence,
