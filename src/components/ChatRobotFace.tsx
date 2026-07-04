@@ -43,7 +43,6 @@ export default function ChatRobotFace({
   const { currentEmotion, setEmotion } = useExpressionState({ initial: 'normal' });
   const { speaking, speak, stop: stopTTS } = useSpeech();
   const { listening, interimTranscript, transcript, start: startSTT, stop: stopSTT, error: sttError } = useSpeechRecognition();
-  const [idleTime, setIdleTime] = useState(0);
   const prevEmotionRef = useRef<Emotion | null>(null);
   const autoSpokenRef = useRef<string>('');
   const [mounted, setMounted] = useState(false);
@@ -54,17 +53,20 @@ export default function ChatRobotFace({
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setIdleTime((p) => p + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (isGenerating || !isConnected) setIdleTime(0);
-  }, [isGenerating, isConnected]);
-
-  useEffect(() => {
     if (transcript && onTranscript) onTranscript(transcript);
   }, [transcript, onTranscript]);
+
+  // Idle cycle — alternate between normal and happy when not doing anything
+  useEffect(() => {
+    if (isGenerating || !isConnected || listening || (lastMessage && lastMessage.trim().length > 0)) return;
+    const idleCycle = ['normal', 'happy', 'normal', 'excited'];
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % idleCycle.length;
+      setEmotion(idleCycle[idx] as Emotion);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isGenerating, isConnected, listening, lastMessage, setEmotion]);
 
   // Determine emotion
   useEffect(() => {
@@ -72,7 +74,6 @@ export default function ChatRobotFace({
     if (!isConnected) newEmotion = 'concerned';
     else if (isGenerating) newEmotion = 'excited';
     else if (listening) newEmotion = 'surprised';
-    else if (idleTime > 30) newEmotion = 'sleepy';
     else if (lastMessage && lastMessage.trim().length > 0) {
       const sentiment = analyzeSentiment(lastMessage);
       newEmotion = sentiment.confidence > 0.3 ? sentiment.emotion : (lastMessageRole === 'assistant' ? 'happy' : 'normal');
@@ -81,7 +82,7 @@ export default function ChatRobotFace({
     setEmotion(newEmotion);
     if (prevEmotionRef.current !== null && newEmotion !== prevEmotionRef.current) playEmotionSound(newEmotion);
     prevEmotionRef.current = newEmotion;
-  }, [isGenerating, isConnected, lastMessage, lastMessageRole, idleTime, listening, setEmotion]);
+  }, [isGenerating, isConnected, lastMessage, lastMessageRole, listening, setEmotion]);
 
   // Auto-speak assistant responses
   useEffect(() => {
